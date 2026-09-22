@@ -45,6 +45,7 @@ so distinct names never collide. The alternative is one shared server
 
 ```
 server.py                  stdlib HTTP server: static files + JSON API
+instructions.txt           free text shown above the cards; the owner edits it
 web/index.html, app.js, style.css
 data/mycoast.json          input: 1,893 reports, 2,948 images (read-only)
 annotations/annotations.jsonl   THE annotation store (append-only log)
@@ -75,6 +76,8 @@ flushed and fsynced under a lock.
 
 - `status` is `depth` (value + unit required), `cant_tell` (no value), or
   `cleared` (retracts that annotator's earlier answer; used by Undo).
+- `annotator` comes from the server, never from the request body; the page
+  cannot set it.
 - **Current state = the last event per `(record_id, annotator)`.** Re-saving
   is an edit; nothing is ever rewritten in place.
 - Why not browser localStorage: it is lost with a cache clear, a different
@@ -123,8 +126,14 @@ Only current, non-`cleared` state is exported, one row per
   remembered.
 - After saving in `To do`, the card leaves the list; a toast offers Undo
   (restores the previous state by appending a new event).
-- Annotator name is required before saving and is remembered in the browser
-  (a convenience only -- the data itself is server-side).
+- `instructions.txt` is shown as an "Instructions" panel above the cards.
+  It is read on every `/api/items` request, so editing it needs a page
+  refresh, not a restart. Rendered with `textContent` and `white-space:
+  pre-wrap`: line breaks survive, HTML is never parsed. An empty or missing
+  file hides the panel.
+- There is no annotator field in the UI. The server stamps every row with
+  `--annotator`, defaulting to the OS user name (`getpass.getuser()`), which
+  is what keeps two people's rows apart when logs are merged.
 - Cards render in pages as you scroll; images use native lazy loading and
   are hotlinked from `cdn.mycoast.photos` (verified to serve without referer
   checks). No pixels are stored in this repo.

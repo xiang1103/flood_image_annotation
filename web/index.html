@@ -13,10 +13,6 @@
       <div class="progress" id="progress">Loading…</div>
     </div>
     <div class="bar-controls">
-      <label class="annotator">
-        Annotator
-        <input id="annotator" type="text" placeholder="your name" maxlength="64" autocomplete="off">
-      </label>
       <div class="segmented" role="radiogroup" aria-label="Which images to show">
         <button data-view="todo" class="active" role="radio" aria-checked="true">To do <span id="count-todo"></span></button>
         <button data-view="done" role="radio" aria-checked="false">Annotated <span id="count-done"></span></button>
@@ -27,6 +23,10 @@
   </header>
 
   <main>
+    <section id="instructions" class="instructions" hidden>
+      <h2>Instructions</h2>
+      <p id="instructions-text"></p>
+    </section>
     <div id="grid" class="grid"></div>
     <div id="empty" class="empty" hidden></div>
     <div id="sentinel"></div>

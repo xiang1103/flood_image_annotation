@@ -1,0 +1,3 @@
+Estimate how deep the water is in each photo, you can choose measurements for each picture.
+If you cannot tell, press "Can't tell" rather than guessing.
+If you do not see any flooding in the photo, enter 0 into the "depth" field.

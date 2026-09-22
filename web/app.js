@@ -1,7 +1,6 @@
 "use strict";
 
 const PAGE_SIZE = 40;
-const LS_ANNOTATOR = "mycoast-annotator";
 const LS_UNIT = "mycoast-last-unit";
 
 const state = {
@@ -10,11 +9,11 @@ const state = {
   view: "todo",     // todo | done | all
   list: [],         // items matching the view, in order
   rendered: 0,      // how many of list are in the DOM
+  annotator: "",    // set by the server (--annotator / the OS user name)
 };
 
 const $ = (id) => document.getElementById(id);
 const grid = $("grid");
-const annotatorInput = $("annotator");
 
 // ---- localStorage is only a convenience; never required ------------------
 function lsGet(key, fallback) {
@@ -43,8 +42,7 @@ function el(tag, props = {}, children = []) {
 const isDone = (item) => item.annotations.length > 0;
 const matchesView = (item) =>
   state.view === "all" || (state.view === "done") === isDone(item);
-const annotator = () => annotatorInput.value.trim();
-const mine = (item) => item.annotations.find((a) => a.annotator === annotator()) || null;
+const mine = (item) => item.annotations.find((a) => a.annotator === state.annotator) || null;
 
 function describe(a) {
   return a.status === "cant_tell" ? "can't tell" : `${a.depth_value} ${a.depth_unit}`;
@@ -54,9 +52,11 @@ function describe(a) {
 async function load() {
   const res = await fetch("/api/items");
   if (!res.ok) throw new Error(`GET /api/items: ${res.status}`);
-  const { items } = await res.json();
+  const { items, annotator, instructions } = await res.json();
   items.forEach((it, i) => { it.order = i; });
   state.items = items;
+  state.annotator = annotator;
+  showInstructions(instructions);
   state.byId = new Map(items.map((it) => [it.record_id, it]));
   applyView();
 }
@@ -66,8 +66,7 @@ async function post(item, status, value, unit) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      record_id: item.record_id, annotator: annotator(),
-      status, depth_value: value, depth_unit: unit,
+      record_id: item.record_id, status, depth_value: value, depth_unit: unit,
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -192,17 +191,15 @@ function showError(node, msg) {
   node.hidden = false;
 }
 
-function requireAnnotator() {
-  if (annotator()) return true;
-  annotatorInput.classList.add("missing");
-  annotatorInput.focus();
-  showToast("Enter your name in the top bar before annotating.");
-  return false;
+// Plain text from instructions.txt, shown above the cards. Line breaks are
+// preserved by CSS; the text is set with textContent, never parsed as HTML.
+function showInstructions(text) {
+  $("instructions-text").textContent = text || "";
+  $("instructions").hidden = !text;
 }
 
 // ---- saving -----------------------------------------------------------------
 async function submit(item, card, status, value, unit, errorNode) {
-  if (!requireAnnotator()) return;
   errorNode.hidden = true;
   const prev = mine(item);
   try {
@@ -307,14 +304,6 @@ function showToast(msg, onUndo) {
 }
 
 // ---- wiring -------------------------------------------------------------------
-annotatorInput.value = lsGet(LS_ANNOTATOR, "");
-annotatorInput.addEventListener("input", () => {
-  annotatorInput.classList.remove("missing");
-  lsSet(LS_ANNOTATOR, annotator());
-});
-// "mine" depends on the name, so the prefilled values and Clear buttons do too.
-annotatorInput.addEventListener("change", applyView);
-
 document.querySelectorAll(".segmented button").forEach((btn) => {
   btn.addEventListener("click", () => {
     state.view = btn.dataset.view;

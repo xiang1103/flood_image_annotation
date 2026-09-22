@@ -5,6 +5,7 @@ Serves web/ and a small JSON API. Annotations are an append-only JSONL log;
 the current state is the last event per (record_id, annotator). See CLAUDE.md.
 """
 import argparse
+import getpass
 import json
 import math
 import os
@@ -17,11 +18,21 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(ROOT, "data", "mycoast.json")
 LOG_FILE = os.path.join(ROOT, "annotations", "annotations.jsonl")
+INSTRUCTIONS_FILE = os.path.join(ROOT, "instructions.txt")
 WEB_DIR = os.path.join(ROOT, "web")
 
 UNITS_TO_CM = {"inch": 2.54, "cm": 1.0}
 STATUSES = {"depth", "cant_tell", "cleared"}
 SCHEMA_VERSION = 1
+
+
+def default_annotator():
+    """Identifies whose log this is once several are merged; --annotator wins."""
+    try:
+        name = getpass.getuser().strip()
+    except Exception:
+        name = ""
+    return (name or "anonymous")[:64]
 
 
 def now_iso():
@@ -160,13 +171,10 @@ class Store:
 
 
 def validate(body, images):
-    """Return (record_id, annotator, status, value, unit) or raise ValueError."""
+    """Return (record_id, status, value, unit) or raise ValueError."""
     record_id = body.get("record_id")
     if record_id not in images:
         raise ValueError("unknown record_id")
-    annotator = str(body.get("annotator") or "").strip()
-    if not annotator or len(annotator) > 64:
-        raise ValueError("annotator name is required (max 64 chars)")
     status = body.get("status")
     if status not in STATUSES:
         raise ValueError(f"status must be one of {sorted(STATUSES)}")
@@ -181,10 +189,19 @@ def validate(body, images):
         unit = body.get("depth_unit")
         if unit not in UNITS_TO_CM:
             raise ValueError(f"depth_unit must be one of {sorted(UNITS_TO_CM)}")
-    return record_id, annotator, status, value, unit
+    return record_id, status, value, unit
 
 
-def make_handler(store):
+def read_instructions():
+    """Read on every request, so edits show up on a page refresh."""
+    try:
+        with open(INSTRUCTIONS_FILE, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
+
+
+def make_handler(store, annotator):
     class Handler(SimpleHTTPRequestHandler):
         # Python reads MIME types from the Windows registry, which some
         # installs have wrong (e.g. .js as text/plain). Pin the ones we serve.
@@ -215,7 +232,8 @@ def make_handler(store):
             if path == "/api/items":
                 by_image = store.by_image()
                 items = [dict(img, annotations=by_image.get(rid, [])) for rid, img in store.images.items()]
-                return self.send_json({"items": items})
+                return self.send_json({"items": items, "annotator": annotator,
+                                       "instructions": read_instructions()})
             if path == "/api/export":
                 stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
                 return self.send_json(store.export(), headers={
@@ -228,10 +246,10 @@ def make_handler(store):
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 body = json.loads(self.rfile.read(length) or b"{}")
-                args = validate(body, store.images)
+                record_id, status, value, unit = validate(body, store.images)
             except (ValueError, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e)}, 400)
-            ev = store.append(*args)
+            ev = store.append(record_id, annotator, status, value, unit)
             return self.send_json({"ok": True, "event": ev,
                                    "annotations": store.by_image().get(ev["record_id"], [])})
 
@@ -246,6 +264,8 @@ def main():
     ap.add_argument("--log", default=LOG_FILE)
     ap.add_argument("--export", metavar="OUT.json", help="write the export and exit")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
+    ap.add_argument("--annotator", help="name recorded on every annotation "
+                                        "(default: this computer's user name)")
     args = ap.parse_args()
 
     # Windows consoles may not be UTF-8; never crash just printing a path.
@@ -253,6 +273,7 @@ def main():
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
 
+    annotator = (args.annotator or "").strip() or default_annotator()
     store = Store(args.log, load_images(args.data), args.data)
 
     if args.export:
@@ -263,12 +284,12 @@ def main():
         return
 
     try:
-        server = ThreadingHTTPServer((args.host, args.port), make_handler(store))
+        server = ThreadingHTTPServer((args.host, args.port), make_handler(store, annotator))
     except OSError as e:
         sys.exit(f"Could not start on port {args.port} ({e.strerror}). The site may already be "
                  f"running -- open http://localhost:{args.port} -- or pick another: --port 8790")
     url = f"http://localhost:{args.port}"
-    print(f"{len(store.images)} images; serving {url}", flush=True)
+    print(f"{len(store.images)} images; annotating as \"{annotator}\"; serving {url}", flush=True)
     print("Leave this window open while annotating. Press Ctrl+C (or close it) to stop.", flush=True)
     if not args.no_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()

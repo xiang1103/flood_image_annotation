@@ -1,11 +1,7 @@
 # flood_image_annotation
-Annotation website to annotate myCoast images more efficiently
+Use this website to annotate flood images. 
 
-Runs on macOS, Windows and Linux. The only requirement is **Python 3.8 or
-newer** -- no packages to install, no internet setup beyond loading the photos.
-
-
-## Starting the Website Method 1  
+## Starting the Website - Method 1  
 - **Windows:** double-click `start.bat`.
 - **macOS:** double-click `start.command`. The first time, macOS may refuse
   because it was downloaded: right-click it -> **Open** -> **Open**.
@@ -20,11 +16,23 @@ from a terminal in this folder: `python3 server.py` (macOS/Linux) or
 
 
 ## Potential Requirements 
-
 - Download python and run `python3 --version` (macOS) or `py --version` (Windows) to make sure 
 
 ## Downloading Annotations 
 
-Click **Export JSON** and the file contains everything that's downloaded as a json file. You can keep that file to submit as work.  
-- `annotations/annotations.jsonl` also contains everything that's downloaded. 
+Click **Export JSON** and the file contains everything that's downloaded as a json file. You can keep that file to submit as work. 
 
+## Important 
+- `annotations/annotations.jsonl` carries your work in progress and tracks everything you have annotated so far. Make sure to **not delete that file**  
+
+## Instructions Shown to Annotators
+
+Edit `instructions.txt` in any text editor and refresh the page -- the text
+appears in a box above the photos. No restart needed. Leave the file empty to
+hide the box.
+
+## Who Annotated What
+
+Each row records an annotator name, taken automatically from the computer's
+user name, so several people's files can be combined without clashing. To set
+it yourself, start with `python3 server.py --annotator "your name"`.
