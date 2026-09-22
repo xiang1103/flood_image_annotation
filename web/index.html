@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MyCoast Depth Annotation</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-title">
+      <h1>MyCoast depth annotation</h1>
+      <div class="progress" id="progress">Loading…</div>
+    </div>
+    <div class="bar-controls">
+      <label class="annotator">
+        Annotator
+        <input id="annotator" type="text" placeholder="your name" maxlength="64" autocomplete="off">
+      </label>
+      <div class="segmented" role="radiogroup" aria-label="Which images to show">
+        <button data-view="todo" class="active" role="radio" aria-checked="true">To do <span id="count-todo"></span></button>
+        <button data-view="done" role="radio" aria-checked="false">Annotated <span id="count-done"></span></button>
+        <button data-view="all" role="radio" aria-checked="false">All <span id="count-all"></span></button>
+      </div>
+      <a class="btn" id="export" href="/api/export" download>Export JSON</a>
+    </div>
+  </header>
+
+  <main>
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty" hidden></div>
+    <div id="sentinel"></div>
+  </main>
+
+  <div id="lightbox" class="lightbox" hidden>
+    <button class="lightbox-close" aria-label="Close">×</button>
+    <img id="lightbox-img" alt="">
+    <div class="lightbox-caption" id="lightbox-caption"></div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
