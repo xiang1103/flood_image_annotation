@@ -113,6 +113,10 @@ main { padding: 16px; }
 .card-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
 .place { font-weight: 600; font-size: 14px; }
+.coords {
+  font-size: 12px; color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
 .reporter { font-size: 12px; color: var(--warn); }
 .desc { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 details { font-size: 12px; color: var(--muted); }

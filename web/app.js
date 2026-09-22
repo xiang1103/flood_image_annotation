@@ -42,6 +42,12 @@ const isDone = (item) => Boolean(item.annotation);
 const matchesView = (item) =>
   state.view === "all" || (state.view === "done") === isDone(item);
 
+// 5 decimals is about a metre; the full values stay in the title attribute.
+function coordText(item) {
+  if (typeof item.lat !== "number" || typeof item.lon !== "number") return "";
+  return `${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}`;
+}
+
 function describe(a) {
   return a.status === "cant_tell" ? "can't tell" : `${a.depth_value} ${a.depth_unit}`;
 }
@@ -120,8 +126,10 @@ function updateCounts() {
 // Counted from the cards on screen, never from a stored list: switching tabs
 // rebuilds every card, so a remembered id would outlive its input box and
 // report work that no longer exists anywhere.
+const dirtyCount = () => grid.querySelectorAll(".card.dirty").length;
+
 function updateUnsavedNotice() {
-  const n = grid.querySelectorAll(".card.dirty").length;
+  const n = dirtyCount();
   const notice = $("unsaved");
   notice.hidden = n === 0;
   notice.textContent = n === 1
@@ -189,6 +197,12 @@ function buildCard(item) {
         el("span", { textContent: item.local_time_text || "" }),
       ]),
       el("div", { class: "place", textContent: [item.place, item.county].filter(Boolean).join(", ") }),
+      coordText(item)
+        ? el("div", {
+            class: "coords", textContent: coordText(item),
+            title: `latitude ${item.lat}, longitude ${item.lon}`,
+          })
+        : null,
       item.reporter_estimated_depth
         ? el("div", { class: "reporter", textContent: `Reporter's estimate: ${item.reporter_estimated_depth}` })
         : null,
@@ -333,6 +347,17 @@ document.querySelectorAll(".segmented button").forEach((btn) => {
     applyView();
     window.scrollTo({ top: 0 });
   });
+});
+
+// The export contains SAVED annotations only, so say so before downloading.
+// This is the one confirm left: it warns, it does not gate saving.
+$("export").addEventListener("click", (e) => {
+  const n = dirtyCount();
+  if (n && !window.confirm(
+    `${n} photo${n === 1 ? " has" : "s have"} a depth typed in but not saved. `
+    + "Those are NOT in the export. Download anyway?")) {
+    e.preventDefault();
+  }
 });
 
 new IntersectionObserver((entries) => {

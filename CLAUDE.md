@@ -123,11 +123,11 @@ history stays in the JSONL.
 
 **The export holds SAVED annotations only.** A depth typed into a box but
 never saved exists nowhere but that input element. The UI hints at this --
-the card is outlined amber and the top bar counts such cards -- but nothing
-is ever gated on it, by the owner's request: no confirm on Export, no
-`beforeunload`, and saving one card never depends on any other.
+the card is outlined amber, the top bar counts such cards, and Export
+confirms before downloading. Nothing is gated on it otherwise, by the owner's
+request: no `beforeunload`, and saving one card never depends on any other.
 
-The count is `grid.querySelectorAll(".card.dirty").length`, read from the
+The count (`dirtyCount()`) is `grid.querySelectorAll(".card.dirty").length`, read from the
 cards on screen. It was a `Set` of record_ids and that was a bug: switching
 tabs rebuilds every card, so an id left in the Set reported unsaved work for
 an input box that no longer existed, and the count could never return to
@@ -139,7 +139,9 @@ zero. Anything tracking per-card UI state must die with the card.
   as annotated once it has a current `depth` or `cant_tell` answer, so by
   default finished images disappear.
 - Card: thumbnail (click -> full-resolution image in a lightbox), report type,
-  place, local time, "image i of n", reporter's own estimated depth, the
+  place, lat/lon (5 dp, ~1 m; full precision in the title attribute; every
+  report in the corpus has coordinates), local time, "image i of n",
+  reporter's own estimated depth, the
   description, the full report text (collapsed), and a link to the MyCoast
   report page.
 - Input: number (>= 0, decimals allowed) + unit dropdown + Save + Can't tell.
