@@ -33,7 +33,16 @@ Cross-platform details that are deliberate:
   cmd.exe misparses LF batch files).
 - MIME types for `.js/.css/.html/.json` are pinned in the handler: on Windows
   Python reads them from the registry, which is sometimes wrong.
-- A busy port exits with a readable message, not a traceback.
+- **Ports pick themselves.** 8780 is preferred; if it is taken, the next
+  free port up to 8799 is used. Starting always works, so the launchers never
+  need arguments.
+- Before falling back, the busy port is probed with `GET /api/ping`. If it
+  answers with our `APP_ID` **and the same log path**, the site is already
+  running: that browser tab is opened and the second start exits 0 instead of
+  serving a duplicate. Two servers over one log would each hold a state built
+  from a read the other no longer matches -- appends from one are invisible to
+  the other, and its export would miss them. A different log path is a
+  different job, so that case does start a second server.
 
 **Each computer keeps its own log.** When people run the site on their own
 machines, collect their `annotations.jsonl` (or exports). There is no

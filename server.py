@@ -10,6 +10,8 @@ import math
 import os
 import sys
 import threading
+import urllib.error
+import urllib.request
 import webbrowser
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +26,8 @@ WEB_DIR = os.path.join(ROOT, "web")
 UNITS_TO_CM = {"inch": 2.54, "cm": 1.0}
 STATUSES = {"depth", "cant_tell", "cleared"}
 SCHEMA_VERSION = 1
+APP_ID = "flood-image-annotation"
+PORT_TRIES = 20
 
 
 def now_iso():
@@ -194,6 +198,40 @@ def read_instructions():
     return out
 
 
+def running_instance(host, port, log_path):
+    """True if OUR site already serves this port with the same log file.
+
+    A second server on the same log would append to a file it did not read;
+    the two would disagree about what is annotated.
+    """
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/ping", timeout=1.0) as r:
+            info = json.loads(r.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
+        return False
+    return info.get("app") == APP_ID and info.get("log") == os.path.abspath(log_path)
+
+
+def bind_server(host, port, tries, log_path, handler):
+    """Bind `port`, or the next free one. Returns (server, port).
+
+    Raises SystemExit if our own site already holds the port, or nothing is
+    free in the range.
+    """
+    for candidate in range(port, port + tries):
+        try:
+            return ThreadingHTTPServer((host, candidate), handler), candidate
+        except OSError:
+            probe_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+            if running_instance(probe_host, candidate, log_path):
+                url = f"http://localhost:{candidate}"
+                print(f"The annotation site is already running at {url} -- opening it.", flush=True)
+                webbrowser.open(url)
+                raise SystemExit(0)
+    raise SystemExit(f"No free port between {port} and {port + tries - 1}. "
+                     "Close some programs or pass --port.")
+
+
 def make_handler(store):
     class Handler(SimpleHTTPRequestHandler):
         # Python reads MIME types from the Windows registry, which some
@@ -232,6 +270,8 @@ def make_handler(store):
                 by_image = store.by_image()
                 items = [dict(img, annotation=by_image.get(rid)) for rid, img in store.images.items()]
                 return self.send_json({"items": items, "instructions": read_instructions()})
+            if path == "/api/ping":
+                return self.send_json({"app": APP_ID, "log": os.path.abspath(store.path)})
             if path == "/api/export":
                 stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
                 return self.send_json(store.export(), headers={
@@ -256,7 +296,8 @@ def make_handler(store):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8780)
+    ap.add_argument("--port", type=int, default=8780,
+                    help="preferred port; the next free one is used if it is taken")
     ap.add_argument("--data", default=DATA_FILE)
     ap.add_argument("--log", default=LOG_FILE)
     ap.add_argument("--export", metavar="OUT.json", help="write the export and exit")
@@ -277,12 +318,10 @@ def main():
         print(f"wrote {args.export}: {out['counts']}")
         return
 
-    try:
-        server = ThreadingHTTPServer((args.host, args.port), make_handler(store))
-    except OSError as e:
-        sys.exit(f"Could not start on port {args.port} ({e.strerror}). The site may already be "
-                 f"running -- open http://localhost:{args.port} -- or pick another: --port 8790")
-    url = f"http://localhost:{args.port}"
+    server, port = bind_server(args.host, args.port, PORT_TRIES, args.log, make_handler(store))
+    url = f"http://localhost:{port}"
+    if port != args.port:
+        print(f"Port {args.port} was busy; using {port} instead.", flush=True)
     print(f"{len(store.images)} images; serving {url}", flush=True)
     print("Leave this window open while annotating. Press Ctrl+C (or close it) to stop.", flush=True)
     if not args.no_browser:
