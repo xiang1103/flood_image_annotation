@@ -122,9 +122,16 @@ Only current, non-`cleared` state is exported, one row per image. The full
 history stays in the JSONL.
 
 **The export holds SAVED annotations only.** A depth typed into a box but
-never saved exists nowhere but that input element. The UI therefore tracks
-"dirty" inputs: the card is outlined amber, a count shows in the top bar, the
-Export button confirms first, and `beforeunload` warns on reload/close.
+never saved exists nowhere but that input element. The UI hints at this --
+the card is outlined amber and the top bar counts such cards -- but nothing
+is ever gated on it, by the owner's request: no confirm on Export, no
+`beforeunload`, and saving one card never depends on any other.
+
+The count is `grid.querySelectorAll(".card.dirty").length`, read from the
+cards on screen. It was a `Set` of record_ids and that was a bug: switching
+tabs rebuilds every card, so an id left in the Set reported unsaved work for
+an input box that no longer existed, and the count could never return to
+zero. Anything tracking per-card UI state must die with the card.
 
 ## UI behaviour
 

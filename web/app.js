@@ -8,7 +8,6 @@ const state = {
   view: "todo",     // todo | done | all
   list: [],         // items matching the view, in order
   rendered: 0,      // how many of list are in the DOM
-  dirty: new Set(), // record_ids with a typed depth that has NOT been saved
   instructions: {}, // {todo, done}: one text per view, from the .txt files
 };
 
@@ -75,8 +74,6 @@ async function post(item, status, value, unit) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `save failed (${res.status})`);
   item.annotation = body.annotation || null;
-  state.dirty.delete(item.record_id);
-  updateUnsavedNotice();
 }
 
 // Plain text from instructions.txt ("To do"/"All") or
@@ -96,6 +93,7 @@ function applyView() {
   grid.replaceChildren();
   renderMore();
   updateCounts();
+  updateUnsavedNotice();
 }
 
 function renderMore() {
@@ -119,8 +117,11 @@ function updateCounts() {
     : "Nothing here yet.";
 }
 
+// Counted from the cards on screen, never from a stored list: switching tabs
+// rebuilds every card, so a remembered id would outlive its input box and
+// report work that no longer exists anywhere.
 function updateUnsavedNotice() {
-  const n = state.dirty.size;
+  const n = grid.querySelectorAll(".card.dirty").length;
   const notice = $("unsaved");
   notice.hidden = n === 0;
   notice.textContent = n === 1
@@ -153,11 +154,10 @@ function buildCard(item) {
     lsSet(LS_UNIT, unitSelect.value);
     submit(item, card, "depth", v, unitSelect.value, error);
   };
-  // A typed depth does nothing until it is saved, so flag it as unsaved.
+  // A typed depth does nothing until it is saved, so flag the card. This is
+  // a hint only: it never gates saving this card or any other.
   const markDirty = () => {
-    const changed = valueInput.value.trim() !== savedValue(item);
-    state.dirty[changed ? "add" : "delete"](item.record_id);
-    card.classList.toggle("dirty", changed);
+    card.classList.toggle("dirty", valueInput.value.trim() !== savedValue(item));
     updateUnsavedNotice();
   };
   valueInput.addEventListener("input", markDirty);
@@ -256,6 +256,7 @@ function afterChange(item, card) {
     if (card) {
       state.rendered -= 1;
       const nextCard = card.nextElementSibling;
+      card.classList.remove("dirty");
       card.classList.add("leaving");
       setTimeout(() => card.remove(), 250);
       if (nextCard) {
@@ -266,6 +267,7 @@ function afterChange(item, card) {
     }
   }
   updateCounts();
+  updateUnsavedNotice();
 }
 
 // Put an item back into the list at its original data-order position.
@@ -331,21 +333,6 @@ document.querySelectorAll(".segmented button").forEach((btn) => {
     applyView();
     window.scrollTo({ top: 0 });
   });
-});
-
-// The export contains SAVED annotations only, so say so before downloading.
-$("export").addEventListener("click", (e) => {
-  const n = state.dirty.size;
-  if (n && !window.confirm(
-    `${n} photo${n === 1 ? " has" : "s have"} a depth typed in that was never saved. `
-    + "Those are NOT in the export. Download anyway?")) {
-    e.preventDefault();
-  }
-});
-
-// Typed-but-unsaved work is lost on reload; make the browser ask first.
-window.addEventListener("beforeunload", (e) => {
-  if (state.dirty.size) e.preventDefault();
 });
 
 new IntersectionObserver((entries) => {

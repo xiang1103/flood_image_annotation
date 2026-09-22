@@ -140,6 +140,9 @@ summary { cursor: pointer; }
 }
 
 .toast {
+  /* Floats over the cards, so it must not swallow clicks meant for a Save
+     button underneath it; only its own Undo button is clickable. */
+  pointer-events: none;
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 60;
   background: var(--text); color: var(--bg);
   padding: 10px 14px; border-radius: 8px;
@@ -147,4 +150,4 @@ summary { cursor: pointer; }
   box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
 }
 .toast[hidden] { display: none; }
-.toast button { background: none; border: 0; color: var(--accent); font-weight: 600; cursor: pointer; }
+.toast button { pointer-events: auto; background: none; border: 0; color: var(--accent); font-weight: 600; cursor: pointer; }
