@@ -2,10 +2,9 @@
 """Water-depth annotation site for MyCoast flood photos.
 
 Serves web/ and a small JSON API. Annotations are an append-only JSONL log;
-the current state is the last event per (record_id, annotator). See CLAUDE.md.
+the current state is the last event per record_id. See CLAUDE.md.
 """
 import argparse
-import getpass
 import json
 import math
 import os
@@ -24,15 +23,6 @@ WEB_DIR = os.path.join(ROOT, "web")
 UNITS_TO_CM = {"inch": 2.54, "cm": 1.0}
 STATUSES = {"depth", "cant_tell", "cleared"}
 SCHEMA_VERSION = 1
-
-
-def default_annotator():
-    """Identifies whose log this is once several are merged; --annotator wins."""
-    try:
-        name = getpass.getuser().strip()
-    except Exception:
-        name = ""
-    return (name or "anonymous")[:64]
 
 
 def now_iso():
@@ -81,7 +71,7 @@ class Store:
         self.data_path = data_path
         self.images = images
         self.lock = threading.Lock()
-        self.current = {}  # (record_id, annotator) -> latest event
+        self.current = {}  # record_id -> latest event
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self._replay()
 
@@ -109,7 +99,7 @@ class Store:
                     continue
                 if ev["record_id"] not in self.images:
                     orphans += 1
-                self.current[(ev["record_id"], ev["annotator"])] = ev
+                self.current[ev["record_id"]] = ev
         if orphans:
             print(f"WARNING: {orphans} log events refer to record_ids not in {self.data_path}; "
                   "kept in the log and the export", file=sys.stderr)
@@ -120,12 +110,9 @@ class Store:
         return [ev for ev in self.current.values() if ev["status"] != "cleared"]
 
     def by_image(self):
-        out = {}
-        for ev in self.active():
-            out.setdefault(ev["record_id"], []).append(ev)
-        return out
+        return {ev["record_id"]: ev for ev in self.active()}
 
-    def append(self, record_id, annotator, status, value=None, unit=None):
+    def append(self, record_id, status, value=None, unit=None):
         img = self.images[record_id]
         ev = {
             "record_id": record_id,
@@ -133,7 +120,6 @@ class Store:
             "source_url": img["source_url"],
             "image_url": img["image_url"],
             "image_sha256": img["image_sha256"],
-            "annotator": annotator,
             "status": status,
             "depth_value": value,
             "depth_unit": unit,
@@ -146,12 +132,12 @@ class Store:
                 f.write(line)
                 f.flush()
                 os.fsync(f.fileno())
-            self.current[(record_id, annotator)] = ev
+            self.current[record_id] = ev
         return ev
 
     def export(self):
         rows = []
-        for ev in sorted(self.active(), key=lambda e: (e["report_id"], e["record_id"], e["annotator"])):
+        for ev in sorted(self.active(), key=lambda e: (e["report_id"], e["record_id"])):
             img = self.images.get(ev["record_id"], {})
             row = dict(ev)
             for k in ("lat", "lon", "local_time", "report_type", "reporter_estimated_depth"):
@@ -163,8 +149,7 @@ class Store:
             "source_file": os.path.relpath(self.data_path, ROOT),
             "counts": {
                 "images_total": len(self.images),
-                "images_annotated": len({r["record_id"] for r in rows}),
-                "annotations": len(rows),
+                "images_annotated": len(rows),
             },
             "annotations": rows,
         }
@@ -201,7 +186,7 @@ def read_instructions():
         return ""
 
 
-def make_handler(store, annotator):
+def make_handler(store):
     class Handler(SimpleHTTPRequestHandler):
         # Python reads MIME types from the Windows registry, which some
         # installs have wrong (e.g. .js as text/plain). Pin the ones we serve.
@@ -212,6 +197,13 @@ def make_handler(store, annotator):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=WEB_DIR, **kw)
 
+        def end_headers(self):
+            # Never cache: a stale app.js against a newer server breaks the
+            # page in ways that look like a bug ("cannot read ... of
+            # undefined"). Nothing here is big enough for caching to matter.
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            super().end_headers()
+
         def log_message(self, fmt, *args):
             if not self.path.startswith("/api/") or self.command == "POST":
                 super().log_message(fmt, *args)
@@ -221,7 +213,6 @@ def make_handler(store, annotator):
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -231,9 +222,8 @@ def make_handler(store, annotator):
             path = self.path.split("?", 1)[0]
             if path == "/api/items":
                 by_image = store.by_image()
-                items = [dict(img, annotations=by_image.get(rid, [])) for rid, img in store.images.items()]
-                return self.send_json({"items": items, "annotator": annotator,
-                                       "instructions": read_instructions()})
+                items = [dict(img, annotation=by_image.get(rid)) for rid, img in store.images.items()]
+                return self.send_json({"items": items, "instructions": read_instructions()})
             if path == "/api/export":
                 stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
                 return self.send_json(store.export(), headers={
@@ -249,9 +239,8 @@ def make_handler(store, annotator):
                 record_id, status, value, unit = validate(body, store.images)
             except (ValueError, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e)}, 400)
-            ev = store.append(record_id, annotator, status, value, unit)
-            return self.send_json({"ok": True, "event": ev,
-                                   "annotations": store.by_image().get(ev["record_id"], [])})
+            ev = store.append(record_id, status, value, unit)
+            return self.send_json({"ok": True, "annotation": store.by_image().get(record_id)})
 
     return Handler
 
@@ -264,8 +253,6 @@ def main():
     ap.add_argument("--log", default=LOG_FILE)
     ap.add_argument("--export", metavar="OUT.json", help="write the export and exit")
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
-    ap.add_argument("--annotator", help="name recorded on every annotation "
-                                        "(default: this computer's user name)")
     args = ap.parse_args()
 
     # Windows consoles may not be UTF-8; never crash just printing a path.
@@ -273,7 +260,6 @@ def main():
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
 
-    annotator = (args.annotator or "").strip() or default_annotator()
     store = Store(args.log, load_images(args.data), args.data)
 
     if args.export:
@@ -284,12 +270,12 @@ def main():
         return
 
     try:
-        server = ThreadingHTTPServer((args.host, args.port), make_handler(store, annotator))
+        server = ThreadingHTTPServer((args.host, args.port), make_handler(store))
     except OSError as e:
         sys.exit(f"Could not start on port {args.port} ({e.strerror}). The site may already be "
                  f"running -- open http://localhost:{args.port} -- or pick another: --port 8790")
     url = f"http://localhost:{args.port}"
-    print(f"{len(store.images)} images; annotating as \"{annotator}\"; serving {url}", flush=True)
+    print(f"{len(store.images)} images; serving {url}", flush=True)
     print("Leave this window open while annotating. Press Ctrl+C (or close it) to stop.", flush=True)
     if not args.no_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()

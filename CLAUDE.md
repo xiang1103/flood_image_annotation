@@ -35,11 +35,13 @@ Cross-platform details that are deliberate:
   Python reads them from the registry, which is sometimes wrong.
 - A busy port exits with a readable message, not a traceback.
 
-**Each computer keeps its own log.** When annotators run the site on their own
-machines, collect their `annotations.jsonl` (or exports). Logs from different
-annotators can be concatenated: state is keyed by `(record_id, annotator)`,
-so distinct names never collide. The alternative is one shared server
-(`--host 0.0.0.0` or an ssh tunnel), which needs no merging.
+**Each computer keeps its own log.** When people run the site on their own
+machines, collect their `annotations.jsonl` (or exports). There is no
+annotator field anywhere -- by the owner's decision -- so state is keyed by
+`record_id` alone and two logs covering the SAME image conflict: later line
+wins on concatenation, arbitrarily. Either give each person a disjoint slice
+of the images, or run one shared server (`--host 0.0.0.0` or an ssh tunnel),
+which needs no merging at all.
 
 ## Layout
 
@@ -69,16 +71,14 @@ flushed and fsynced under a lock.
 
 ```json
 {"record_id": "...", "report_id": 249795, "source_url": "...", "image_url": "...",
- "image_sha256": "...", "annotator": "alice", "status": "depth",
+ "image_sha256": "...", "status": "depth",
  "depth_value": 7.0, "depth_unit": "inch", "depth_cm": 17.78,
  "annotated_at": "2026-09-22T15:04:05+00:00"}
 ```
 
 - `status` is `depth` (value + unit required), `cant_tell` (no value), or
-  `cleared` (retracts that annotator's earlier answer; used by Undo).
-- `annotator` comes from the server, never from the request body; the page
-  cannot set it.
-- **Current state = the last event per `(record_id, annotator)`.** Re-saving
+  `cleared` (retracts the earlier answer; used by Undo and the Clear button).
+- **Current state = the last event per `record_id`.** Re-saving
   is an edit; nothing is ever rewritten in place.
 - Why not browser localStorage: it is lost with a cache clear, a different
   browser or a private window, and there is no copy anyone else can see.
@@ -86,9 +86,8 @@ flushed and fsynced under a lock.
   everything; an append can lose at most the one line being written. A
   truncated last line is skipped with a warning on startup, and a newline is
   appended first so the next save is not glued onto the fragment.
-- The log is also a full audit trail (who changed what, when), and lets
-  multiple annotators label the same image without overwriting each other,
-  which is what inter-annotator agreement needs.
+- The log is also a full audit trail: every value ever entered for an image
+  is still there with its timestamp, even after an edit or a Clear.
 - The raw value and unit are kept exactly as typed; `depth_cm` is derived
   (`inch * 2.54`) so consumers never have to convert.
 
@@ -104,19 +103,24 @@ A single JSON file:
 {"schema_version": 1, "exported_at": "...", "source_file": "data/mycoast.json",
  "counts": {"images_total": 2948, "images_annotated": 0, "annotations": 0},
  "annotations": [ { record_id, report_id, source_url, image_url, image_sha256,
-                    annotator, status, depth_value, depth_unit, depth_cm,
+                    status, depth_value, depth_unit, depth_cm,
                     annotated_at, lat, lon, local_time, report_type,
                     reporter_estimated_depth } ]}
 ```
 
-Only current, non-`cleared` state is exported, one row per
-`(image, annotator)`. The full history stays in the JSONL.
+Only current, non-`cleared` state is exported, one row per image. The full
+history stays in the JSONL.
+
+**The export holds SAVED annotations only.** A depth typed into a box but
+never saved exists nowhere but that input element. The UI therefore tracks
+"dirty" inputs: the card is outlined amber, a count shows in the top bar, the
+Export button confirms first, and `beforeunload` warns on reload/close.
 
 ## UI behaviour
 
-- **View filter**: `To do` (default) / `Annotated` / `All`. An image is
-  "annotated" once ANY annotator has a current `depth` or `cant_tell` answer,
-  so by default finished images disappear.
+- **View filter**: `To do` (default) / `Annotated` / `All`. An image counts
+  as annotated once it has a current `depth` or `cant_tell` answer, so by
+  default finished images disappear.
 - Card: thumbnail (click -> full-resolution image in a lightbox), report type,
   place, local time, "image i of n", reporter's own estimated depth, the
   description, the full report text (collapsed), and a link to the MyCoast
@@ -131,9 +135,9 @@ Only current, non-`cleared` state is exported, one row per
   refresh, not a restart. Rendered with `textContent` and `white-space:
   pre-wrap`: line breaks survive, HTML is never parsed. An empty or missing
   file hides the panel.
-- There is no annotator field in the UI. The server stamps every row with
-  `--annotator`, defaulting to the OS user name (`getpass.getuser()`), which
-  is what keeps two people's rows apart when logs are merged.
+- Saving is one click/Enter and is immediate: POST -> appended to the log
+  (fsynced) -> the card leaves the `To do` list -> a toast offers Undo for a
+  few seconds. There is no separate submit step and nothing is batched.
 - Cards render in pages as you scroll; images use native lazy loading and
   are hotlinked from `cdn.mycoast.photos` (verified to serve without referer
   checks). No pixels are stored in this repo.
@@ -141,7 +145,7 @@ Only current, non-`cleared` state is exported, one row per
 ## Known considerations
 
 - The report text includes the reporter's own depth estimate, which can bias
-  the annotator. It is shown because the owner asked for the text; it is
+  whoever annotates. It is shown because the owner asked for the text; it is
   exported as `reporter_estimated_depth` so the two can be compared.
 - 10 reports list `duplicate_images` (exact duplicates already removed from
   `images` by the scraper); they are not shown.
@@ -151,10 +155,11 @@ Only current, non-`cleared` state is exported, one row per
 - [x] Plan (this file)
 - [x] Server: load data, replay log, `/api/items`, `/api/annotate`, `/api/export`
 - [x] UI: cards, lightbox, filter toggle, save / can't tell / undo, export
-- [x] API tested end to end (validation, multi-annotator, clear, export,
+- [x] API tested end to end (validation, edit, clear, export,
       truncated-log recovery) against a scratch log
 - [x] Launchers + cross-platform fixes (tested on Linux only)
 - [ ] Try start.bat on Windows and start.command on macOS
 - [ ] UI not yet clicked through in a real browser (no headless browser on
       the server) -- do this first
 - [ ] Hand-test with real annotators; adjust fields if more labels are needed
+- [ ] If several people annotate at once, decide slices vs one shared server

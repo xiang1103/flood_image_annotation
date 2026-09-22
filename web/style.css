@@ -45,6 +45,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .bar h1 { font-size: 17px; margin: 0; }
 .progress { color: var(--muted); font-size: 13px; }
+.unsaved { color: var(--warn); font-size: 13px; font-weight: 600; }
 .bar-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .instructions {
   background: var(--card);
@@ -102,6 +103,8 @@ main { padding: 16px; }
 }
 .card.leaving { opacity: 0; transform: scale(.97); }
 .card.is-done { border-color: var(--ok); }
+/* a depth is typed in but not saved */
+.card.dirty { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
 .thumb {
   display: block; width: 100%; aspect-ratio: 4 / 3;
   background: var(--bg); border: 0; padding: 0; cursor: zoom-in;

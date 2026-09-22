@@ -5,11 +5,10 @@ const LS_UNIT = "mycoast-last-unit";
 
 const state = {
   items: [],        // every image, in data order
-  byId: new Map(),  // record_id -> item
   view: "todo",     // todo | done | all
   list: [],         // items matching the view, in order
   rendered: 0,      // how many of list are in the DOM
-  annotator: "",    // set by the server (--annotator / the OS user name)
+  dirty: new Set(), // record_ids with a typed depth that has NOT been saved
 };
 
 const $ = (id) => document.getElementById(id);
@@ -39,25 +38,28 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
-const isDone = (item) => item.annotations.length > 0;
+const isDone = (item) => Boolean(item.annotation);
 const matchesView = (item) =>
   state.view === "all" || (state.view === "done") === isDone(item);
-const mine = (item) => item.annotations.find((a) => a.annotator === state.annotator) || null;
 
 function describe(a) {
   return a.status === "cant_tell" ? "can't tell" : `${a.depth_value} ${a.depth_unit}`;
+}
+
+// The saved depth as it appears in the input box ("" when nothing is saved).
+function savedValue(item) {
+  const a = item.annotation;
+  return a && a.status === "depth" ? String(a.depth_value) : "";
 }
 
 // ---- data -----------------------------------------------------------------
 async function load() {
   const res = await fetch("/api/items");
   if (!res.ok) throw new Error(`GET /api/items: ${res.status}`);
-  const { items, annotator, instructions } = await res.json();
+  const { items, instructions } = await res.json();
   items.forEach((it, i) => { it.order = i; });
   state.items = items;
-  state.annotator = annotator;
   showInstructions(instructions);
-  state.byId = new Map(items.map((it) => [it.record_id, it]));
   applyView();
 }
 
@@ -71,7 +73,16 @@ async function post(item, status, value, unit) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `save failed (${res.status})`);
-  item.annotations = body.annotations;
+  item.annotation = body.annotation || null;
+  state.dirty.delete(item.record_id);
+  updateUnsavedNotice();
+}
+
+// Plain text from instructions.txt, shown above the cards. Line breaks are
+// preserved by CSS; the text is set with textContent, never parsed as HTML.
+function showInstructions(text) {
+  $("instructions-text").textContent = text || "";
+  $("instructions").hidden = !text;
 }
 
 // ---- view & rendering -------------------------------------------------------
@@ -104,24 +115,28 @@ function updateCounts() {
     : "Nothing here yet.";
 }
 
+function updateUnsavedNotice() {
+  const n = state.dirty.size;
+  const notice = $("unsaved");
+  notice.hidden = n === 0;
+  notice.textContent = n === 1
+    ? "1 photo has a depth typed in but not saved"
+    : `${n} photos have a depth typed in but not saved`;
+}
+
 function buildCard(item) {
   const valueInput = el("input", {
     type: "number", min: "0", step: "any", inputMode: "decimal",
     placeholder: "depth", "aria-label": "Water depth",
+    value: savedValue(item),
   });
   const unitSelect = el("select", { "aria-label": "Unit" }, [
     el("option", { value: "inch", textContent: "inch" }),
     el("option", { value: "cm", textContent: "cm" }),
   ]);
-  unitSelect.value = lsGet(LS_UNIT, "inch");
+  unitSelect.value = (item.annotation && item.annotation.depth_unit) || lsGet(LS_UNIT, "inch");
   const error = el("div", { class: "error", hidden: true });
   const existing = el("div", { class: "existing" });
-
-  const my = mine(item);
-  if (my && my.status === "depth") {
-    valueInput.value = my.depth_value;
-    unitSelect.value = my.depth_unit;
-  }
 
   const card = el("article", { class: "card", dataset: { id: item.record_id } });
 
@@ -134,6 +149,14 @@ function buildCard(item) {
     lsSet(LS_UNIT, unitSelect.value);
     submit(item, card, "depth", v, unitSelect.value, error);
   };
+  // A typed depth does nothing until it is saved, so flag it as unsaved.
+  const markDirty = () => {
+    const changed = valueInput.value.trim() !== savedValue(item);
+    state.dirty[changed ? "add" : "delete"](item.record_id);
+    card.classList.toggle("dirty", changed);
+    updateUnsavedNotice();
+  };
+  valueInput.addEventListener("input", markDirty);
   valueInput.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
   unitSelect.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
 
@@ -144,9 +167,9 @@ function buildCard(item) {
       onclick: () => submit(item, card, "cant_tell", null, null, error),
     }),
   ];
-  if (my) {
+  if (item.annotation) {
     buttons.push(el("button", {
-      class: "btn", textContent: "Clear", title: "Remove your annotation",
+      class: "btn", textContent: "Clear", title: "Remove this annotation",
       onclick: () => submit(item, card, "cleared", null, null, error),
     }));
   }
@@ -175,15 +198,9 @@ function buildCard(item) {
       el("div", { class: "form" }, [valueInput, unitSelect, ...buttons, error]),
     ]),
   );
-  renderExisting(item, card, existing);
-  return card;
-}
-
-function renderExisting(item, card, node) {
   card.classList.toggle("is-done", isDone(item));
-  node.textContent = item.annotations.length
-    ? "Annotated: " + item.annotations.map((a) => `${a.annotator}: ${describe(a)}`).join(" · ")
-    : "";
+  existing.textContent = item.annotation ? `Saved: ${describe(item.annotation)}` : "";
+  return card;
 }
 
 function showError(node, msg) {
@@ -191,24 +208,19 @@ function showError(node, msg) {
   node.hidden = false;
 }
 
-// Plain text from instructions.txt, shown above the cards. Line breaks are
-// preserved by CSS; the text is set with textContent, never parsed as HTML.
-function showInstructions(text) {
-  $("instructions-text").textContent = text || "";
-  $("instructions").hidden = !text;
-}
-
 // ---- saving -----------------------------------------------------------------
 async function submit(item, card, status, value, unit, errorNode) {
   errorNode.hidden = true;
-  const prev = mine(item);
+  const prev = item.annotation;
   try {
     await post(item, status, value, unit);
   } catch (e) {
     return showError(errorNode, e.message);
   }
   afterChange(item, card);
-  const what = status === "cleared" ? "Cleared" : `Saved ${describe({ status, depth_value: value, depth_unit: unit })}`;
+  const what = status === "cleared"
+    ? "Cleared"
+    : `Saved ${describe({ status, depth_value: value, depth_unit: unit })}`;
   showToast(what, () => undo(item, prev));
 }
 
@@ -219,12 +231,11 @@ async function undo(item, prev) {
   } catch (e) {
     return showToast(`Undo failed: ${e.message}`);
   }
-  const card = grid.querySelector(`[data-id="${item.record_id}"]`);
-  afterChange(item, card);
+  afterChange(item, grid.querySelector(`[data-id="${item.record_id}"]`));
   showToast("Undone");
 }
 
-// Re-render or remove/insert one card after its annotations changed.
+// Re-render or remove/insert one card after its annotation changed.
 function afterChange(item, card) {
   const inList = state.list.includes(item);
   if (matchesView(item)) {
@@ -232,7 +243,7 @@ function afterChange(item, card) {
     if (inList && card) {
       card.replaceWith(fresh);
     } else if (!inList) {
-      card?.remove();  // may still be fading out after an earlier removal
+      if (card) card.remove();  // may still be fading out after an earlier removal
       insertCard(item, fresh);
     }
   } else if (inList) {
@@ -243,7 +254,10 @@ function afterChange(item, card) {
       const nextCard = card.nextElementSibling;
       card.classList.add("leaving");
       setTimeout(() => card.remove(), 250);
-      if (nextCard) nextCard.querySelector("input[type=number]")?.focus({ preventScroll: false });
+      if (nextCard) {
+        const nextInput = nextCard.querySelector("input[type=number]");
+        if (nextInput) nextInput.focus();
+      }
       if (state.rendered < PAGE_SIZE) renderMore();
     }
   }
@@ -268,8 +282,7 @@ function insertCard(item, cardNode) {
 // ---- lightbox & toast -------------------------------------------------------
 function openLightbox(item) {
   $("lightbox-img").src = item.image_url;
-  const cap = $("lightbox-caption");
-  cap.replaceChildren(
+  $("lightbox-caption").replaceChildren(
     `${[item.place, item.county].filter(Boolean).join(", ")} · ${item.local_time_text || ""} · `,
     el("a", { href: item.source_url, target: "_blank", rel: "noopener", textContent: "Open report ↗" }),
     " · ",
@@ -314,6 +327,21 @@ document.querySelectorAll(".segmented button").forEach((btn) => {
     applyView();
     window.scrollTo({ top: 0 });
   });
+});
+
+// The export contains SAVED annotations only, so say so before downloading.
+$("export").addEventListener("click", (e) => {
+  const n = state.dirty.size;
+  if (n && !window.confirm(
+    `${n} photo${n === 1 ? " has" : "s have"} a depth typed in that was never saved. `
+    + "Those are NOT in the export. Download anyway?")) {
+    e.preventDefault();
+  }
+});
+
+// Typed-but-unsaved work is lost on reload; make the browser ask first.
+window.addEventListener("beforeunload", (e) => {
+  if (state.dirty.size) e.preventDefault();
 });
 
 new IntersectionObserver((entries) => {
