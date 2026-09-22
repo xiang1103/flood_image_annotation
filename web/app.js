@@ -9,6 +9,7 @@ const state = {
   list: [],         // items matching the view, in order
   rendered: 0,      // how many of list are in the DOM
   dirty: new Set(), // record_ids with a typed depth that has NOT been saved
+  instructions: {}, // {todo, done}: one text per view, from the .txt files
 };
 
 const $ = (id) => document.getElementById(id);
@@ -59,7 +60,7 @@ async function load() {
   const { items, instructions } = await res.json();
   items.forEach((it, i) => { it.order = i; });
   state.items = items;
-  showInstructions(instructions);
+  state.instructions = instructions || {};
   applyView();
 }
 
@@ -78,15 +79,18 @@ async function post(item, status, value, unit) {
   updateUnsavedNotice();
 }
 
-// Plain text from instructions.txt, shown above the cards. Line breaks are
-// preserved by CSS; the text is set with textContent, never parsed as HTML.
-function showInstructions(text) {
-  $("instructions-text").textContent = text || "";
+// Plain text from instructions.txt ("To do"/"All") or
+// instructions_annotated.txt ("Annotated"), shown above the cards. Line breaks
+// are preserved by CSS; set with textContent, never parsed as HTML.
+function showInstructions() {
+  const text = state.instructions[state.view === "done" ? "done" : "todo"] || "";
+  $("instructions-text").textContent = text;
   $("instructions").hidden = !text;
 }
 
 // ---- view & rendering -------------------------------------------------------
 function applyView() {
+  showInstructions();
   state.list = state.items.filter(matchesView);
   state.rendered = 0;
   grid.replaceChildren();

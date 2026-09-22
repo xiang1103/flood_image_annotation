@@ -1,0 +1,5 @@
+These photos already have a saved depth.
+
+Change a number and press Enter to correct it, or press "Clear" to send the
+photo back to the To do list. Nothing here needs to be re-done unless you
+think an earlier answer was wrong.

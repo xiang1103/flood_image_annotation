@@ -18,6 +18,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(ROOT, "data", "mycoast.json")
 LOG_FILE = os.path.join(ROOT, "annotations", "annotations.jsonl")
 INSTRUCTIONS_FILE = os.path.join(ROOT, "instructions.txt")
+INSTRUCTIONS_ANNOTATED_FILE = os.path.join(ROOT, "instructions_annotated.txt")
 WEB_DIR = os.path.join(ROOT, "web")
 
 UNITS_TO_CM = {"inch": 2.54, "cm": 1.0}
@@ -178,12 +179,19 @@ def validate(body, images):
 
 
 def read_instructions():
-    """Read on every request, so edits show up on a page refresh."""
-    try:
-        with open(INSTRUCTIONS_FILE, encoding="utf-8", errors="replace") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return ""
+    """Read on every request, so edits show up on a page refresh.
+
+    One file per view: instructions.txt for "To do"/"All",
+    instructions_annotated.txt for the "Annotated" tab.
+    """
+    out = {}
+    for key, path in (("todo", INSTRUCTIONS_FILE), ("done", INSTRUCTIONS_ANNOTATED_FILE)):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                out[key] = f.read().strip()
+        except FileNotFoundError:
+            out[key] = ""
+    return out
 
 
 def make_handler(store):

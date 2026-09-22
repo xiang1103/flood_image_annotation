@@ -47,7 +47,8 @@ which needs no merging at all.
 
 ```
 server.py                  stdlib HTTP server: static files + JSON API
-instructions.txt           free text shown above the cards; the owner edits it
+instructions.txt           free text above the cards in To do / All
+instructions_annotated.txt free text above the cards in the Annotated tab
 web/index.html, app.js, style.css
 data/mycoast.json          input: 1,893 reports, 2,948 images (read-only)
 annotations/annotations.jsonl   THE annotation store (append-only log)
@@ -130,11 +131,13 @@ Export button confirms first, and `beforeunload` warns on reload/close.
   remembered.
 - After saving in `To do`, the card leaves the list; a toast offers Undo
   (restores the previous state by appending a new event).
-- `instructions.txt` is shown as an "Instructions" panel above the cards.
-  It is read on every `/api/items` request, so editing it needs a page
-  refresh, not a restart. Rendered with `textContent` and `white-space:
+- Two instruction files, one per view: `instructions.txt` for To do and All,
+  `instructions_annotated.txt` for Annotated. Shown as an "Instructions"
+  panel above the cards, switched when the tab changes. Both are read on
+  every `/api/items` request, so editing either needs a page refresh, not a
+  restart. Rendered with `textContent` and `white-space:
   pre-wrap`: line breaks survive, HTML is never parsed. An empty or missing
-  file hides the panel.
+  file hides the panel for that view.
 - Saving is one click/Enter and is immediate: POST -> appended to the log
   (fsynced) -> the card leaves the `To do` list -> a toast offers Undo for a
   few seconds. There is no separate submit step and nothing is batched.

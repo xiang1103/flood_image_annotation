@@ -24,13 +24,3 @@ Click **Export JSON** and the file contains everything that's downloaded as a js
 
 ## Important 
 - `annotations/annotations.jsonl` carries your work in progress and tracks everything you have annotated so far. Make sure to **not delete that file**  
-
-## Saving
-
-Each photo is saved the moment you press Enter or click **Save** -- there is
-no separate submit step. A saved photo disappears from **To do** and a short
-"Undo" appears at the bottom of the screen.
-
-A depth you type but never save is **not** recorded: the card stays outlined
-in amber, the top bar counts how many are unsaved, and the site warns you if
-you export or close the page with any left over.
