@@ -24,5 +24,5 @@ Click **Export JSON** and the file contains everything that's downloaded as a js
 
 ## Important 
 - do not modify `data/mycost.json`!! 
-- `annotations/annotations.jsonl` carries your work in progress and tracks everything you have annotated so far. Make sure to **not delete that file**  
-- do not have multiple of this browser open at the same time. Only one browser is open for annotation 
+- `annotations/annotations.jsonl` carries your work in progress and tracks everything you have annotated so far. Make sure to **not delete that file**. If that file is deleted, all your work would be reset 
+- do not have multiple of this browser open at the same time. Only one browser is open for annotation, otherwise changes made in that browser tab may not be reflected/stored. 

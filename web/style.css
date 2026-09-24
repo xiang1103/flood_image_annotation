@@ -33,7 +33,7 @@ body {
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 a { color: var(--accent); }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 
 .bar {
   position: sticky; top: 0; z-index: 10;
@@ -58,7 +58,7 @@ button, input, select { font: inherit; color: inherit; }
 .instructions h2 { margin: 0 0 6px; font-size: 15px; }
 .instructions p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-input[type=text], input[type=number], select {
+input[type=text], input[type=number], select, textarea {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -103,7 +103,7 @@ main { padding: 16px; }
 }
 .card.leaving { opacity: 0; transform: scale(.97); }
 .card.is-done { border-color: var(--ok); }
-/* a depth is typed in but not saved */
+/* a depth or reasoning is typed in but not saved */
 .card.dirty { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
 .thumb {
   display: block; width: 100%; aspect-ratio: 4 / 3;
@@ -126,6 +126,7 @@ summary { cursor: pointer; }
 .existing { font-size: 12px; color: var(--ok); }
 .form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
 .form input[type=number] { width: 90px; }
+.form .reasoning { width: 100%; min-height: 3em; resize: vertical; }
 .form .error { width: 100%; color: var(--danger); font-size: 12px; }
 
 .lightbox {

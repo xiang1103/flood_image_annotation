@@ -117,7 +117,7 @@ class Store:
     def by_image(self):
         return {ev["record_id"]: ev for ev in self.active()}
 
-    def append(self, record_id, status, value=None, unit=None):
+    def append(self, record_id, status, value=None, unit=None, reasoning=None):
         img = self.images[record_id]
         ev = {
             "record_id": record_id,
@@ -129,6 +129,7 @@ class Store:
             "depth_value": value,
             "depth_unit": unit,
             "depth_cm": round(value * UNITS_TO_CM[unit], 3) if status == "depth" else None,
+            "reasoning": reasoning,
             "annotated_at": now_iso(),
         }
         line = json.dumps(ev, ensure_ascii=False) + "\n"
@@ -145,6 +146,7 @@ class Store:
         for ev in sorted(self.active(), key=lambda e: (e["report_id"], e["record_id"])):
             img = self.images.get(ev["record_id"], {})
             row = dict(ev)
+            row.setdefault("reasoning", None)  # events logged before the field existed
             for k in ("lat", "lon", "local_time", "report_type", "reporter_estimated_depth"):
                 row[k] = img.get(k)
             rows.append(row)
@@ -161,7 +163,7 @@ class Store:
 
 
 def validate(body, images):
-    """Return (record_id, status, value, unit) or raise ValueError."""
+    """Return (record_id, status, value, unit, reasoning) or raise ValueError."""
     record_id = body.get("record_id")
     if record_id not in images:
         raise ValueError("unknown record_id")
@@ -179,7 +181,14 @@ def validate(body, images):
         unit = body.get("depth_unit")
         if unit not in UNITS_TO_CM:
             raise ValueError(f"depth_unit must be one of {sorted(UNITS_TO_CM)}")
-    return record_id, status, value, unit
+    # Optional free text, no length limit. Kept exactly as typed; a blank box
+    # is stored as null. A Clear retracts the reasoning with the answer.
+    reasoning = body.get("reasoning")
+    if reasoning is not None and not isinstance(reasoning, str):
+        raise ValueError("reasoning must be a string")
+    if status == "cleared" or not (reasoning or "").strip():
+        reasoning = None
+    return record_id, status, value, unit, reasoning
 
 
 def read_instructions():
@@ -284,10 +293,10 @@ def make_handler(store):
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 body = json.loads(self.rfile.read(length) or b"{}")
-                record_id, status, value, unit = validate(body, store.images)
+                record_id, status, value, unit, reasoning = validate(body, store.images)
             except (ValueError, json.JSONDecodeError) as e:
                 return self.send_json({"error": str(e)}, 400)
-            ev = store.append(record_id, status, value, unit)
+            ev = store.append(record_id, status, value, unit, reasoning)
             return self.send_json({"ok": True, "annotation": store.by_image().get(record_id)})
 
     return Handler

@@ -83,11 +83,15 @@ flushed and fsynced under a lock.
 {"record_id": "...", "report_id": 249795, "source_url": "...", "image_url": "...",
  "image_sha256": "...", "status": "depth",
  "depth_value": 7.0, "depth_unit": "inch", "depth_cm": 17.78,
+ "reasoning": "water reaches the car's hubcap",
  "annotated_at": "2026-09-22T15:04:05+00:00"}
 ```
 
 - `status` is `depth` (value + unit required), `cant_tell` (no value), or
   `cleared` (retracts the earlier answer; used by Undo and the Clear button).
+- `reasoning` is optional free text (no length limit), kept exactly as typed;
+  blank is stored as `null`, and a `cleared` event always has `null`. Events
+  logged before the field existed have no key; the export fills in `null`.
 - **Current state = the last event per `record_id`.** Re-saving
   is an edit; nothing is ever rewritten in place.
 - Why not browser localStorage: it is lost with a cache clear, a different
@@ -113,7 +117,7 @@ A single JSON file:
 {"schema_version": 1, "exported_at": "...", "source_file": "data/mycoast.json",
  "counts": {"images_total": 2948, "images_annotated": 0, "annotations": 0},
  "annotations": [ { record_id, report_id, source_url, image_url, image_sha256,
-                    status, depth_value, depth_unit, depth_cm,
+                    status, depth_value, depth_unit, depth_cm, reasoning,
                     annotated_at, lat, lon, local_time, report_type,
                     reporter_estimated_depth } ]}
 ```
@@ -121,7 +125,7 @@ A single JSON file:
 Only current, non-`cleared` state is exported, one row per image. The full
 history stays in the JSONL.
 
-**The export holds SAVED annotations only.** A depth typed into a box but
+**The export holds SAVED annotations only.** A depth or reasoning typed into a box but
 never saved exists nowhere but that input element. The UI hints at this --
 the card is outlined amber, the top bar counts such cards, and Export
 confirms before downloading. Nothing is gated on it otherwise, by the owner's
@@ -144,8 +148,12 @@ zero. Anything tracking per-card UI state must die with the card.
   reporter's own estimated depth, the
   description, the full report text (collapsed), and a link to the MyCoast
   report page.
-- Input: number (>= 0, decimals allowed) + unit dropdown + Save + Can't tell.
-  Enter saves and moves focus to the next card. The last-used unit is
+- Input: number (>= 0, decimals allowed) + unit dropdown + Save + Can't tell,
+  with an optional "Reasoning" textarea on its own line below them. The reasoning is sent with Save / Can't
+  tell (Enter in it is a newline, not a save). Enter in the number box saves
+  and moves focus to the next card. To change a reasoning in the Annotated
+  tab, edit it and press Save again; on a can't-tell card, Save with the
+  depth left empty re-saves it as can't tell. The last-used unit is
   remembered.
 - After saving in `To do`, the card leaves the list; a toast offers Undo
   (restores the previous state by appending a new event).

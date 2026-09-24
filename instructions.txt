@@ -1,6 +1,8 @@
 - Estimate how deep the water is in each photo, you can choose measurements for each picture.
-- Enter the depth and press "ENTER" on keyboard or click save to save the progress
-- Clicking on the image shows a better quality image
+- Enter the depth and press "ENTER" on keyboard or click save to save the annotation. 
+- Write your reasoning in the reasoning box. 
+- Clicking on the image shows a better quality image.
 - If you cannot tell, press "Can't tell" rather than guessing.
 - If you do not see any flooding in the photo, enter 0 into the "depth" field.
 - All work is automatically saved, you can close the browser by killing the terminal you are running the website in, and reopen the browser by running the same command. Your work will show up.
+- Click "Export Json" to export all the work you have done so far as a json file, with your annotations and reasonings.

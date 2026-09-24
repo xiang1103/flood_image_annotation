@@ -58,6 +58,11 @@ function savedValue(item) {
   return a && a.status === "depth" ? String(a.depth_value) : "";
 }
 
+// The saved reasoning as it appears in its text box.
+function savedReasoning(item) {
+  return (item.annotation && item.annotation.reasoning) || "";
+}
+
 // ---- data -----------------------------------------------------------------
 async function load() {
   const res = await fetch("/api/items");
@@ -69,12 +74,13 @@ async function load() {
   applyView();
 }
 
-async function post(item, status, value, unit) {
+async function post(item, status, value, unit, reasoning) {
   const res = await fetch("/api/annotate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       record_id: item.record_id, status, depth_value: value, depth_unit: unit,
+      reasoning: reasoning || null,
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -133,8 +139,8 @@ function updateUnsavedNotice() {
   const notice = $("unsaved");
   notice.hidden = n === 0;
   notice.textContent = n === 1
-    ? "1 photo has a depth typed in but not saved"
-    : `${n} photos have a depth typed in but not saved`;
+    ? "1 photo has changes typed in but not saved"
+    : `${n} photos have changes typed in but not saved`;
 }
 
 function buildCard(item) {
@@ -148,6 +154,12 @@ function buildCard(item) {
     el("option", { value: "cm", textContent: "cm" }),
   ]);
   unitSelect.value = (item.annotation && item.annotation.depth_unit) || lsGet(LS_UNIT, "inch");
+  // Optional, unlimited free text saved with the depth / can't-tell answer.
+  // Enter makes a new line here; it does not save.
+  const reasoningInput = el("textarea", {
+    class: "reasoning", rows: 2, placeholder: "Reasoning", "aria-label": "Reasoning (optional)",
+    value: savedReasoning(item),
+  });
   const error = el("div", { class: "error", hidden: true });
   const existing = el("div", { class: "existing" });
 
@@ -156,19 +168,26 @@ function buildCard(item) {
   const save = () => {
     const raw = valueInput.value.trim();
     const v = Number(raw);
+    // Save on a can't-tell card with no depth typed re-saves it as can't tell,
+    // so its reasoning can be edited from the Annotated tab.
+    if (raw === "" && item.annotation && item.annotation.status === "cant_tell") {
+      return submit(item, card, "cant_tell", null, null, reasoningInput.value, error);
+    }
     if (raw === "" || !Number.isFinite(v) || v < 0) {
       return showError(error, "Enter a depth of 0 or more.");
     }
     lsSet(LS_UNIT, unitSelect.value);
-    submit(item, card, "depth", v, unitSelect.value, error);
+    submit(item, card, "depth", v, unitSelect.value, reasoningInput.value, error);
   };
   // A typed depth does nothing until it is saved, so flag the card. This is
   // a hint only: it never gates saving this card or any other.
   const markDirty = () => {
-    card.classList.toggle("dirty", valueInput.value.trim() !== savedValue(item));
+    card.classList.toggle("dirty", valueInput.value.trim() !== savedValue(item)
+      || reasoningInput.value !== savedReasoning(item));
     updateUnsavedNotice();
   };
   valueInput.addEventListener("input", markDirty);
+  reasoningInput.addEventListener("input", markDirty);
   valueInput.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
   unitSelect.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
 
@@ -176,13 +195,13 @@ function buildCard(item) {
     el("button", { class: "btn primary", textContent: "Save", onclick: save }),
     el("button", {
       class: "btn", textContent: "Can't tell", title: "Depth cannot be judged from this image",
-      onclick: () => submit(item, card, "cant_tell", null, null, error),
+      onclick: () => submit(item, card, "cant_tell", null, null, reasoningInput.value, error),
     }),
   ];
   if (item.annotation) {
     buttons.push(el("button", {
       class: "btn", textContent: "Clear", title: "Remove this annotation",
-      onclick: () => submit(item, card, "cleared", null, null, error),
+      onclick: () => submit(item, card, "cleared", null, null, null, error),
     }));
   }
 
@@ -213,7 +232,7 @@ function buildCard(item) {
       ]),
       el("a", { href: item.source_url, target: "_blank", rel: "noopener", textContent: "Open MyCoast report ↗" }),
       existing,
-      el("div", { class: "form" }, [valueInput, unitSelect, ...buttons, error]),
+      el("div", { class: "form" }, [valueInput, unitSelect, ...buttons, reasoningInput, error]),
     ]),
   );
   card.classList.toggle("is-done", isDone(item));
@@ -227,11 +246,11 @@ function showError(node, msg) {
 }
 
 // ---- saving -----------------------------------------------------------------
-async function submit(item, card, status, value, unit, errorNode) {
+async function submit(item, card, status, value, unit, reasoning, errorNode) {
   errorNode.hidden = true;
   const prev = item.annotation;
   try {
-    await post(item, status, value, unit);
+    await post(item, status, value, unit, reasoning);
   } catch (e) {
     return showError(errorNode, e.message);
   }
@@ -244,8 +263,8 @@ async function submit(item, card, status, value, unit, errorNode) {
 
 async function undo(item, prev) {
   try {
-    if (prev) await post(item, prev.status, prev.depth_value, prev.depth_unit);
-    else await post(item, "cleared", null, null);
+    if (prev) await post(item, prev.status, prev.depth_value, prev.depth_unit, prev.reasoning);
+    else await post(item, "cleared", null, null, null);
   } catch (e) {
     return showToast(`Undo failed: ${e.message}`);
   }
@@ -354,7 +373,7 @@ document.querySelectorAll(".segmented button").forEach((btn) => {
 $("export").addEventListener("click", (e) => {
   const n = dirtyCount();
   if (n && !window.confirm(
-    `${n} photo${n === 1 ? " has" : "s have"} a depth typed in but not saved. `
+    `${n} photo${n === 1 ? " has" : "s have"} changes typed in but not saved. `
     + "Those are NOT in the export. Download anyway?")) {
     e.preventDefault();
   }
